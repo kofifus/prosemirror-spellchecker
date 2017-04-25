@@ -1,0 +1,16 @@
+{
+  "name": "prosemirror-spellchecker",
+  "version": "0.0.1",
+  "description": "prosemirror spellcher",
+  "main": "src/index.js",
+  "license": "MIT",
+  "maintainers": [
+    {
+      "name": "Kofifus"
+    }
+  ],
+  "repository": {
+    "type": "github",
+    "url": "https://github.com/kofifus/prosemirror-spellchecker"
+  }
+}

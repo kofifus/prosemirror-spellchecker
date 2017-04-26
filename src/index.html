@@ -3,8 +3,11 @@
 	<link rel=stylesheet href="https://prosemirror.net/css/editor.css">
 	<link rel=stylesheet href="https://prosemirror.net/css/site.css">
 	<style>
-		.ProseMirror {
+		body, html {
 		  height: 100%;
+		}	
+		.ProseMirror {
+		  height: 300px;
 		  overflow: auto;
 		}
 
@@ -15,7 +18,8 @@
 </head>
 
 <body>
-	<div id=editor style="width:700px; height:400px"></div>
+  <br>Type something with tyyypos ...<br><br>
+	<div id=editor style="width:700px;"></div>
 	<script src="https://rawgit.com/kofifus/Typo.js/master/typo/typo.js"></script>
 	<script src="bundle_spellcheck.js"></script>
 </body>

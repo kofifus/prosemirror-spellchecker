@@ -1,5 +1,5 @@
 const { Decoration, DecorationSet } = require("prosemirror-view")
-const { Plugin, Selection } = require("prosemirror-state")
+const { Plugin, TextSelection } = require("prosemirror-state")
 
 function addCSSclass(rules) {
 	var style = document.createElement("style");
@@ -84,9 +84,8 @@ function sboxShow(sbox, viewDom, token, screenPos, items, hourglass, correctFunc
 	// position widget
 	let viewrect = viewDom.getBoundingClientRect();
 	let widgetRect = sbox.getBoundingClientRect();
-	if (screenPos.x+widgetRect.width > viewrect.right) screenPos.x = (viewrect.right - widgetRect.width - 2) 
-	if (screenPos.y+widgetRect.height > viewrect.bottom) screenPos.y = (viewrect.bottom - sbox.offsetHeight - 8) 
-	if (screenPos.y < viewrect.top) screenPos.y = (viewrect.top + 2);
+	if (screenPos.x + widgetRect.width > viewrect.right && viewrect.right - widgetRect.width > viewRect.left) screenPos.x = (viewrect.right - widgetRect.width - 2)
+	if (screenPos.y + widgetRect.height > viewrect.bottom && viewrect.bottom - sbox.offsetHeight > viewrect.top) screenPos.y = (viewrect.bottom - sbox.offsetHeight - 8)
 
 	sbox.style.left = screenPos.x + 'px';
 	sbox.style.top = screenPos.y + 'px';
@@ -94,10 +93,10 @@ function sboxShow(sbox, viewDom, token, screenPos, items, hourglass, correctFunc
 
 	selwidget.onchange = (e => {
 		sboxHide(sbox);
-		let correction=e.target.value;
+		let correction = e.target.value;
 		if (correction == '##ignoreall##') {
 			window.typo.ignore(token);
-			correction=token;
+			correction = token;
 		}
 		correctFunc(correction);
 	});
@@ -109,31 +108,23 @@ function sboxHide(sbox) {
 }
 
 function rangeFromTransform(tr) {
-	let from, to
+	let trFrom, trTo
 	for (let i = 0; i < tr.steps.length; i++) {
 		let step = tr.steps[i],
 			map = step.getMap()
 		let stepFrom = map.map(step.from || step.pos, -1)
 		let stepTo = map.map(step.to || step.pos, 1)
-		from = from ? map.map(from, -1).pos.min(stepFrom) : stepFrom
-		to = to ? map.map(to, 1).pos.max(stepTo) : stepTo
+		trFrom = trFrom ? map.map(trFrom, -1).pos.min(stepFrom) : stepFrom
+		trTo = trTo ? map.map(trTo, 1).pos.max(stepTo) : stepTo
 	}
-	return { from, to }
+	return {
+		trFrom,
+		trTo
+	}
 }
-
-/*
-function getWordAt(str, pos) {
-    str = String(str);
-    pos = Number(pos) >>> 0;
-    const start = str.slice(0, pos + 1).search(/\S+$/),
-        right = str.slice(pos).search(/\s/);
-    const word=right < 0 ? str.slice(start) : str.slice(start, right + pos);
-    return { start, word };
-}
-*/
 
 function spellcheckPlugin(typo) {
-	 getSbox(); // create suggestion box
+	getSbox(); // create suggestion box
 
 	return new Plugin({
 		view(view) {
@@ -143,11 +134,18 @@ function spellcheckPlugin(typo) {
 
 		state: {
 			init() {
-				return { decos: DecorationSet.empty, cursorDeco: null }
+				return {
+					decos: DecorationSet.empty,
+					cursorDeco: null
+				}
 			},
 			apply(tr, prev, oldState, state) {
 				sboxHide(getSbox());
-				let { decos, cursorDeco } = this.getState(oldState)
+
+				let {
+					decos,
+					cursorDeco
+				} = this.getState(oldState)
 				decos = decos.map(tr.mapping, tr.doc)
 
 				if (cursorDeco) {
@@ -155,42 +153,65 @@ function spellcheckPlugin(typo) {
 					cursorDeco = null;
 				}
 
-				let from, to;
-				if (tr.docChanged)({ from, to } = rangeFromTransform(tr))
-				if (from && to) {
-					const $t = state.doc.resolve(to)
+				if (!tr.selection.empty || !tr.docChanged) return {
+					decos,
+					cursorDeco
+				}
 
-					let txt = $t.parent.textBetween(0, $t.end() - $t.start(), ' ');
-					//console.log(txt)
-					decos = decos.remove(decos.find($t.start(), $t.end()));
+				let {
+					trFrom,
+					trTo
+				} = rangeFromTransform(tr)
+				if (!trFrom || !trTo) return {
+					decos,
+					cursorDeco
+				}
 
-					const startp = $t.start();
-					const reg = /\w+/g
-					let match = null;
-					while ((match = reg.exec(txt)) != null) {
-						if (window.typo && !window.typo.check(match[0])) {
-							const deco = Decoration.inline(startp + match.index, startp + reg.lastIndex, { class: 'spell-error' });
-							if ($t.pos == startp + reg.lastIndex) {
-								cursorDeco = deco;
-							} else {
-								decos = decos.add(state.doc, [deco]);
-							}
+				const $t = state.doc.resolve(trTo)
+				txtFrom = $t.start();
+				txtTo = $t.end()
+
+				let txt = state.doc.textBetween(txtFrom, txtTo, ' ');
+				const reg = /\w+/g
+				let match = null;
+				while ((match = reg.exec(txt)) != null) {
+					let token = match[0],
+						tokenFrom = match.index,
+						tokenTo = reg.lastIndex
+					if (tokenTo < trFrom && tokenFrom > trTo) continue;
+					decos = decos.remove(decos.find(txtFrom + tokenFrom, txtFrom + tokenTo));
+
+					if (window.typo && !window.typo.check(match[0])) {
+						const deco = Decoration.inline(txtFrom + tokenFrom, txtFrom + tokenTo, {
+							class: 'spell-error'
+						});
+						if ($t.pos == txtFrom + tokenTo) {
+							cursorDeco = deco;
+						} else {
+							decos = decos.add(state.doc, [deco]);
 						}
 					}
 				}
 
-				return { decos, cursorDeco } //: decos.map(tr.mapping, tr.doc), cursorDeco }
+				return {
+					decos,
+					cursorDeco
+				} //: decos.map(tr.mapping, tr.doc), cursorDeco }
 			}
 		},
 		props: {
 			decorations(state) {
-				let { decos } = this.getState(state)
+				let {
+					decos
+				} = this.getState(state)
 				return decos
 			},
 
 			handleContextMenu(view, pos, e) {
-				if (!window.typo) return; 
-				let { decos } = this.getState(view.state)
+				if (!window.typo) return;
+				let {
+					decos
+				} = this.getState(view.state)
 				let deco = decos.find(pos, pos)[0]
 				if (!deco) return
 
@@ -202,12 +223,15 @@ function spellcheckPlugin(typo) {
 
 				let viewDom = view.dom;
 				let coords = view.coordsAtPos(pos);
-				screenPos = { x: e.pageX, y: coords.bottom - 4 }
+				screenPos = {
+					x: e.pageX,
+					y: coords.bottom - 4
+				}
 
 				function correct(correction) {
-					let tr=view.state.tr.replaceWith(deco.from, deco.to, view.state.schema.text(correction));
-					let $newPos= tr.doc.resolve(tr.mapping.map(deco.from+correction.length))
-					tr = tr.setSelection(new Selection($newPos, $newPos))
+					let tr = view.state.tr.replaceWith(deco.from, deco.to, view.state.schema.text(correction));
+					let $newPos = tr.doc.resolve(tr.mapping.map(deco.from + correction.length))
+					tr = tr.setSelection(new TextSelection($newPos, $newPos))
 					view.dispatch(tr);
 					view.focus();
 				}
